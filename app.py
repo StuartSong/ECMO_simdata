@@ -2,9 +2,11 @@ import streamlit as st
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
+from model import MLPVAE
 
 # Load the trained model
-model = torch.load("mlp_vae.pth", map_location=torch.device("cpu"))
+# model = torch.load("mlp_vae.pth", map_location=torch.device("cpu"))
+model = torch.load("mlp_vae.pth", weights_only=False)
 model.eval()  # Set to evaluation mode
 
 # Function to generate synthetic data
@@ -41,7 +43,7 @@ st.title("Interactive MLPVAE Generator")
 
 # Load sample input
 sample_idx = 0  # Pick any row from dataset
-train_tensor = torch.randn(10, 10)  # Dummy data (Replace with actual data)
+train_tensor = torch.randn(10, 43)  # Dummy data (Replace with actual data)
 sample_data = train_tensor[sample_idx]  # Select a sample input
 
 # Select column to modify
