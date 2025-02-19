@@ -2,10 +2,16 @@ import streamlit as st
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
-from model import MLPVAE  # Ensure this model is properly imported
+from model import MLPVAE  # Ensure model definition is available
+import pandas as pd
+from sklearn.preprocessing import StandardScaler
 
-# Load the trained model
-model = torch.load("mlp_vae.pth", weights_only=False)
+# Load the trained model properly
+device = torch.device("cpu")  # Ensure compatibility with Streamlit
+input_dim = 42  # Adjust based on your actual input dimensions
+model = MLPVAE(input_dim=input_dim)  # Initialize model
+model.load_state_dict(torch.load("mlp_vae.pth", map_location=device))  # Load state_dict
+model.to(device)
 model.eval()  # Set to evaluation mode
 
 # Define state names
@@ -29,44 +35,55 @@ def generate_synthetic_data(model, sample, modified_values):
     """
     Modifies multiple columns in the input and generates a synthetic output.
     """
-    model.eval()
-    sample = sample.clone().unsqueeze(0)  # Shape (1, input_dim)
+    model.eval()  # Ensure model is in eval mode
+    sample = sample.clone().unsqueeze(0).to(device)  # Ensure batch size (1, input_dim)
     
-    # Encode to latent space
     with torch.no_grad():
         mu, logvar = model.encode(sample)
         z = model.reparameterize(mu, logvar)
     
-    # Modify the selected columns in the input
     modified_sample = sample.clone()
     for column_idx, new_value in modified_values.items():
-        modified_sample[0, column_idx] = new_value
+        modified_sample[0, column_idx] = new_value  # Modify selected columns
     
-    # Re-encode after modification
     with torch.no_grad():
         new_mu, new_logvar = model.encode(modified_sample)
         new_z = model.reparameterize(new_mu, new_logvar)
+        generated_output = model.decode(new_z)
     
-    # Decode back to see changes
-    generated_output = model.decode(new_z)
-    return generated_output.squeeze().detach().numpy()  # Convert to NumPy for visualization
+    return generated_output.squeeze().detach().cpu().numpy()  # Convert to NumPy for visualization
 
 # Streamlit App UI
 st.title("Interactive MLPVAE State Modifier")
 
-# Load sample input (Replace with real data later)
-train_tensor = torch.randn(1, 42)  # Dummy data (replace with real dataset input)
-sample_data = train_tensor[0]
+# Load and preprocess test data
+test_data = pd.read_csv("non_discritized_states.csv", index_col=0)
+if 'csn' in test_data.columns:
+    test_data.drop(columns=['csn'], inplace=True)  # Ensure 'csn' is removed
+
+scaler = StandardScaler()
+test_data = scaler.fit_transform(test_data)
+
+# Ensure test_data has correct shape
+if test_data.shape[1] != input_dim:
+    st.error(f"Expected input dimension {input_dim}, but found {test_data.shape[1]}")
+    st.stop()
+
+# Load sample input
+sample_data = torch.tensor(test_data[0, :], dtype=torch.float32).to(device)  # Ensure correct shape
 
 # Select multiple columns to modify
-selected_columns = st.multiselect("Select States to Modify", options=range(42), format_func=lambda x: state_names[x])
+selected_columns = st.multiselect("Select States to Modify", options=range(len(state_names)), format_func=lambda x: state_names[x])
 
 # Dictionary to store new values
 modified_values = {}
 for column_idx in selected_columns:
     col1, col2 = st.columns([2, 1])
     with col1:
-        new_value = st.slider(f"Set New Value for {state_names[column_idx]}", min_value=-5.0, max_value=5.0)
+        new_value = st.slider(f"Set New Value for {state_names[column_idx]}", 
+                              min_value=float(test_data[:, column_idx].min()), 
+                              max_value=float(test_data[:, column_idx].max()), 
+                              value=float(test_data[0, column_idx]))
     with col2:
         typed_value = st.number_input(f"Type Value for {state_names[column_idx]}", value=float(new_value), key=f"num_{column_idx}")
     modified_values[column_idx] = typed_value
@@ -74,15 +91,20 @@ for column_idx in selected_columns:
 # Generate synthetic output
 synthetic_output = generate_synthetic_data(model, sample_data, modified_values)
 
+# Apply inverse transformation (undo scaling)
+synthetic_output_rescaled = scaler.inverse_transform(synthetic_output.reshape(1, -1))
+sample_data_rescaled = scaler.inverse_transform(sample_data.cpu().numpy().reshape(1, -1))
+
 # Display original vs. modified data
 st.subheader("Original vs. Modified Output")
 
-fig, ax = plt.subplots()
-ax.plot(sample_data.numpy(), label="Original", marker="o")
-ax.plot(synthetic_output, label="Modified", marker="x")
-ax.set_xticks(range(42))
-ax.set_xticklabels(state_names, rotation=90)
+fig, ax = plt.subplots(figsize=(10, 5))
+ax.plot(sample_data_rescaled.flatten(), label="Original", marker="o", linestyle="dashed")
+ax.plot(synthetic_output_rescaled.flatten(), label="Modified", marker="x", linestyle="solid")
+ax.set_xticks(range(len(state_names)))
+ax.set_xticklabels(state_names, rotation=90, fontsize=8)
 ax.legend()
 st.pyplot(fig)
 
-st.write("Modified Output Values:", synthetic_output)
+st.write("Modified Output Values:")
+st.dataframe(pd.DataFrame(synthetic_output_rescaled, columns=state_names))
