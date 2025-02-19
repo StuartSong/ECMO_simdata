@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 
 class MLPVAE(nn.Module):
-    def __init__(self, input_dim=42, hidden_dim=64, latent_dim=16):
+    def __init__(self, input_dim=42, hidden_dim=128, latent_dim=32):
         super(MLPVAE, self).__init__()
         self.encoder = nn.Sequential(
             nn.Linear(input_dim, hidden_dim),
@@ -14,7 +14,7 @@ class MLPVAE(nn.Module):
         
         self.decoder = nn.Sequential(
             nn.Linear(latent_dim, hidden_dim),
-            nn.BatchNorm1d(hidden_dim),
+            nn.BatchNorm1d(hidden_dim),  # Batch normalization stabilizes training
             nn.ReLU(),
             nn.Linear(hidden_dim, input_dim),
         )
