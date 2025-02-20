@@ -57,54 +57,82 @@ def generate_synthetic_data(model, sample, modified_values):
 st.title("Interactive MLPVAE State Modifier")
 
 # Load and preprocess test data
-test_data = pd.read_csv("non_discritized_states.csv", index_col=0)
-if 'csn' in test_data.columns:
-    test_data.drop(columns=['csn'], inplace=True)  # Ensure 'csn' is removed
+test_data_unscaled = pd.read_csv("non_discritized_states.csv", index_col=0)
+if 'csn' in test_data_unscaled.columns:
+    test_data_unscaled.drop(columns=['csn'], inplace=True)  # Ensure 'csn' is removed
 
 scaler = StandardScaler()
-test_data = scaler.fit_transform(test_data)
-
-# Ensure test_data has correct shape
-if test_data.shape[1] != input_dim:
-    st.error(f"Expected input dimension {input_dim}, but found {test_data.shape[1]}")
-    st.stop()
+test_data = scaler.fit_transform(test_data_unscaled)
 
 # Load sample input
-sample_data = torch.tensor(test_data[0, :], dtype=torch.float32).to(device)  # Ensure correct shape
+sample_data = torch.tensor(test_data[1, :], dtype=torch.float32).to(device)  # Ensure correct shape
 
 # Select multiple columns to modify
 selected_columns = st.multiselect("Select States to Modify", options=range(len(state_names)), format_func=lambda x: state_names[x])
 
 # Dictionary to store new values
 modified_values = {}
+temporary = {}
 for column_idx in selected_columns:
     col1, col2 = st.columns([2, 1])
     with col1:
         new_value = st.slider(f"Set New Value for {state_names[column_idx]}", 
-                              min_value=float(test_data[:, column_idx].min()), 
-                              max_value=float(test_data[:, column_idx].max()), 
-                              value=float(test_data[0, column_idx]))
+                              min_value=float(test_data_unscaled.iloc[:, column_idx].min()), 
+                              max_value=float(test_data_unscaled.iloc[:, column_idx].max()), 
+                              value=float(test_data_unscaled.iloc[0, column_idx]))
     with col2:
         typed_value = st.number_input(f"Type Value for {state_names[column_idx]}", value=float(new_value), key=f"num_{column_idx}")
+    
     modified_values[column_idx] = typed_value
+    temporary[column_idx] = typed_value
 
+
+# # Apply inverse transformation correctly on the full modified vector
+# temporary_transformed = scaler.transform(temporary.reshape(1, -1))
+# st.subheader(temporary_transformed)
 # Generate synthetic output
 synthetic_output = generate_synthetic_data(model, sample_data, modified_values)
 
 # Apply inverse transformation (undo scaling)
-synthetic_output_rescaled = scaler.inverse_transform(synthetic_output.reshape(1, -1))
-sample_data_rescaled = scaler.inverse_transform(sample_data.cpu().numpy().reshape(1, -1))
+synthetic_output_rescaled = scaler.inverse_transform(synthetic_output.reshape(1, -1)).flatten()
+sample_data_rescaled = scaler.inverse_transform(sample_data.cpu().numpy().reshape(1, -1)).flatten()
+
+
+for column_idx in selected_columns:
+    synthetic_output_rescaled[column_idx] = temporary[column_idx]
+
+# Correctly update only modified values
+for column_idx in range(len(state_names)):
+    if abs((synthetic_output_rescaled[column_idx] - sample_data_rescaled[column_idx]) / abs(sample_data_rescaled[column_idx])) > 2:
+        synthetic_output_rescaled[column_idx] = sample_data_rescaled[column_idx]  # Reset extreme differences
+
+st.subheader("Modified Output Values:")
+st.dataframe(pd.DataFrame(synthetic_output_rescaled.reshape(1, -1), columns=state_names))
 
 # Display original vs. modified data
-st.subheader("Original vs. Modified Output")
+st.subheader("Original vs. Modified Output Plots")
 
-fig, ax = plt.subplots(figsize=(10, 5))
-ax.plot(sample_data_rescaled.flatten(), label="Original", marker="o", linestyle="dashed")
-ax.plot(synthetic_output_rescaled.flatten(), label="Modified", marker="x", linestyle="solid")
-ax.set_xticks(range(len(state_names)))
-ax.set_xticklabels(state_names, rotation=90, fontsize=8)
-ax.legend()
+# Create a figure with 14x3 subplots
+fig, axes = plt.subplots(14, 3, figsize=(15, 32))
+fig.suptitle("Original vs. Modified States", fontsize=16)
+
+# Plot each state in a separate subplot
+for i, ax in enumerate(axes.flatten()):
+    if i < len(state_names):
+        # Create bar plot
+        bars = ax.bar(["Original", "Modified"], [sample_data_rescaled[i], synthetic_output_rescaled[i]], color=['orange', 'red'])
+        
+        # Add numerical values above bars
+        for bar in bars:
+            height = bar.get_height()
+            ax.text(bar.get_x() + bar.get_width() / 2, height/2, f"{height:.2f}", ha='center', va='bottom', fontsize=10)
+        
+        ax.set_xticklabels(["Original", "Modified"])
+        # ax.set_ylabel(state_names[i])
+        ax.set_title(state_names[i])
+        ax.legend()
+    else:
+        ax.axis("off")  # Hide unused subplots
+
+plt.tight_layout(rect=[0, 0, 1, 0.98])
 st.pyplot(fig)
-
-st.write("Modified Output Values:")
-st.dataframe(pd.DataFrame(synthetic_output_rescaled, columns=state_names))
