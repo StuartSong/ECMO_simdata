@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 from model import MLPVAE  # Ensure model definition is available
 import pandas as pd
 from sklearn.preprocessing import StandardScaler
+import joblib
 
 # Load the trained model properly
 device = torch.device("cpu")  # Ensure compatibility with Streamlit
@@ -61,7 +62,8 @@ test_data_unscaled = pd.read_csv("non_discritized_states.csv", index_col=0)
 if 'csn' in test_data_unscaled.columns:
     test_data_unscaled.drop(columns=['csn'], inplace=True)  # Ensure 'csn' is removed
 
-scaler = StandardScaler()
+# Load the scaler
+scaler = joblib.load("scaler.pkl")
 test_data = scaler.fit_transform(test_data_unscaled)
 
 # Load sample input
@@ -103,8 +105,11 @@ for column_idx in selected_columns:
 
 # Correctly update only modified values
 for column_idx in range(len(state_names)):
-    if abs((synthetic_output_rescaled[column_idx] - sample_data_rescaled[column_idx]) / abs(sample_data_rescaled[column_idx])) > 2:
-        synthetic_output_rescaled[column_idx] = sample_data_rescaled[column_idx]  # Reset extreme differences
+    if sample_data_rescaled[column_idx]>0 and synthetic_output_rescaled[column_idx]<0:
+        synthetic_output_rescaled[column_idx] = sample_data_rescaled[column_idx]
+    
+    # if abs((synthetic_output_rescaled[column_idx] - sample_data_rescaled[column_idx]) / abs(sample_data_rescaled[column_idx])) > 2:
+    #     synthetic_output_rescaled[column_idx] = sample_data_rescaled[column_idx]  # Reset extreme differences
 
 st.subheader("Modified Output Values:")
 st.dataframe(pd.DataFrame(synthetic_output_rescaled.reshape(1, -1), columns=state_names))
@@ -113,7 +118,7 @@ st.dataframe(pd.DataFrame(synthetic_output_rescaled.reshape(1, -1), columns=stat
 st.subheader("Original vs. Modified Output Plots")
 
 # Create a figure with 14x3 subplots
-fig, axes = plt.subplots(14, 3, figsize=(15, 32))
+fig, axes = plt.subplots(14, 3, figsize=(15, 35))
 fig.suptitle("Original vs. Modified States", fontsize=16)
 
 # Plot each state in a separate subplot
