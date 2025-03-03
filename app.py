@@ -58,6 +58,11 @@ def generate_synthetic_data(model, sample, modified_values):
 st.title("Interactive MLPVAE State Modifier")
 
 # Load and preprocess test data
+test_data_unscaled = pd.read_csv("non_discritized_states.csv", index_col=0)
+if 'csn' in test_data_unscaled.columns:
+    test_data_unscaled.drop(columns=['csn'], inplace=True)  # Ensure 'csn' is removed
+
+# Load and preprocess test data
 test_data_unscaled = pd.read_csv("non_discritized_states.csv")
 
 # Ensure 'csn' column exists
@@ -73,7 +78,7 @@ filtered_data = test_data_unscaled[test_data_unscaled['csn'] == selected_csn]
 selected_row_idx = st.selectbox("Select Time Point", options=filtered_data.index)
 
 # Drop 'csn' column after selection
-test_data_unscaled = filtered_data.drop(columns=['csn'])
+filtered_data = filtered_data.drop(columns=['csn'])
 
 # Load the scaler
 scaler = joblib.load("scaler.pkl")
