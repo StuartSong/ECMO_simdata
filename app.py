@@ -73,11 +73,11 @@ filtered_data = test_data_unscaled[test_data_unscaled['csn'] == selected_csn]
 selected_row_idx = st.selectbox("Select Time Point", options=filtered_data.index)
 
 # Drop 'csn' column after selection
-filtered_data = filtered_data.drop(columns=['csn'])
+test_data_unscaled = filtered_data.drop(columns=['csn'])
 
 # Load the scaler
 scaler = joblib.load("scaler.pkl")
-test_data = scaler.fit_transform(filtered_data)
+test_data = scaler.fit_transform(test_data_unscaled)
 
 # Load sample input
 sample_data = torch.tensor(test_data[1, :], dtype=torch.float32).to(device)  # Ensure correct shape
